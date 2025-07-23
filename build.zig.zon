@@ -1,0 +1,17 @@
+.{
+    .name = .jni,
+    .fingerprint = 0x7511083159ad99e2,
+    .paths = .{
+        "src",
+        "build.zig",
+        "build.zig.zon",
+    },
+
+    .version = "0.1.0",
+    .dependencies = .{
+        .openjdk8 = .{
+            .url = "https://github.com/openjdk/jdk8u/archive/refs/tags/jdk8u462-ga.tar.gz",
+            .hash = "N-V-__8AAPGXOBt2o_MY9OuND9mhi1egls4BRbDrizGPOQwn",
+        },
+    },
+}
