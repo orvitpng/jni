@@ -11,15 +11,11 @@ pub fn build(b: *std.Build) void {
         else => "solaris",
     };
 
-    const lib = b.addSharedLibrary(.{
-        .name = "jni",
+    const module = b.addModule("jni", .{
         .target = target,
         .optimize = b.standardOptimizeOption(.{}),
         .root_source_file = b.path("src/mod.zig"),
-        .link_libc = true,
     });
-    lib.addIncludePath(jdk.path(b, "share/javavm/export"));
-    lib.addIncludePath(jdk.path(b, jdk_os).path(b, "javavm/export"));
-
-    b.installArtifact(lib);
+    module.addIncludePath(jdk.path(b, "share/javavm/export"));
+    module.addIncludePath(jdk.path(b, jdk_os).path(b, "javavm/export"));
 }
