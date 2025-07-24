@@ -4,28 +4,28 @@ pub const c = @cImport({
     @cInclude("jni.h");
 });
 
-// pub const Context = extern struct {
-//     env: *c.JNIEnv,
-//     class: c.jclass,
-// };
+pub const StaticContext = struct {
+    env: *c.JNIEnv,
+    class: c.jclass,
+};
 
-pub fn bind(class: []const u8, from: type) void {
-    const from_info = @typeInfo(from);
+pub const InstanceContext = struct {
+    env: *c.JNIEnv,
+    object: c.jobject,
+};
+
+pub fn bind(class: []const u8, module: type) void {
+    const from_info = @typeInfo(module);
     if (from_info != .@"struct")
         @compileError("Expected a struct type for JNI binding");
 
     inline for (from_info.@"struct".decls) |decl| {
-        const super = @field(from, decl.name);
-        const func_info = @typeInfo(@TypeOf(super));
+        const func = @field(module, decl.name);
+        const func_info = @typeInfo(@TypeOf(func));
         if (func_info != .@"fn" or !func_info.@"fn".calling_convention.eql(.c))
             continue;
 
-        // if (func_info.@"fn".params.len == 0 or
-        //     func_info.@"fn".params[0].type.? != Context)
-        //     @compileError("JNI functions must take in their Context as the" ++
-        //         " first parameter");
-
-        @export(&super, .{
+        @export(&func, .{
             .name = escape("Java." ++ class ++ "." ++ decl.name),
             .linkage = .strong,
         });
