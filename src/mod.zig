@@ -4,15 +4,20 @@ pub const c = @cImport({
     @cInclude("jni.h");
 });
 
-pub const StaticContext = struct {
-    env: *c.JNIEnv,
-    class: c.jclass,
+pub fn Context(ctxType: ContextType) ctxType {
+    return struct {
+        env: *c.JNIEnv,
+        object: if (ctxType == .static) c.jclass else c.jobject,
+    };
+}
+
+pub const ContextType = enum {
+    static,
+    instance,
 };
 
-pub const InstanceContext = struct {
-    env: *c.JNIEnv,
-    object: c.jobject,
-};
+pub const StaticContext = Context(.static);
+pub const InstanceContext = Context(.instance);
 
 pub fn bind(class: []const u8, module: type) void {
     const from_info = @typeInfo(module);
