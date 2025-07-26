@@ -4,50 +4,30 @@ pub const c = @cImport({
     @cInclude("jni.h");
 });
 
-pub fn Context(ctxType: ContextType) ctxType {
-    return struct {
-        env: *c.JNIEnv,
-        object: if (ctxType == .static) c.jclass else c.jobject,
-    };
-}
+pub const Environment = @import("Environment.zig");
+pub const Class = @import("Class.zig");
+pub const Object = @import("Object.zig");
 
-pub const ContextType = enum {
-    static,
-    instance,
+pub const StaticContext = struct {
+    env: Environment,
+    class: Class,
+};
+pub const InstanceContext = struct {
+    env: Environment,
+    object: Object,
 };
 
-pub const StaticContext = Context(.static);
-pub const InstanceContext = Context(.instance);
-
-pub fn bind(class: []const u8, module: type) void {
-    const from_info = @typeInfo(module);
-    if (from_info != .@"struct")
-        @compileError("Expected a struct type for JNI binding");
-
-    inline for (from_info.@"struct".decls) |decl| {
-        const func = @field(module, decl.name);
-        const func_info = @typeInfo(@TypeOf(func));
-        if (func_info != .@"fn" or !func_info.@"fn".calling_convention.eql(.c))
-            continue;
-
-        @export(&func, .{
-            .name = escape("Java." ++ class ++ "." ++ decl.name),
-            .linkage = .strong,
-        });
-    }
-}
-
-pub fn escape(str: []const u8) []const u8 {
-    var size = 0;
-    for (str) |ch|
+pub fn escape(comptime str: []const u8) []const u8 {
+    comptime var size = 0;
+    inline for (str) |ch|
         size += switch (ch) {
             '_', ';', '[' => 2,
             else => 1,
         };
 
     var buf: [size]u8 = undefined;
-    var i = 0;
-    for (str) |ch|
+    comptime var i = 0;
+    inline for (str) |ch|
         switch (ch) {
             '_' => {
                 buf[i] = '_';

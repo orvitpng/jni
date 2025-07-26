@@ -7,8 +7,7 @@ pub fn build(b: *std.Build) void {
     const jdk_os = switch (target.result.os.tag) {
         .windows => "windows",
         .macos => "macosx",
-        // basically all other Unix-like systems
-        else => "solaris",
+        else => "solaris", // Unix-like fallback
     };
 
     const module = b.addModule(
@@ -17,13 +16,6 @@ pub fn build(b: *std.Build) void {
     );
     module.addIncludePath(jdk.path(b, "share/javavm/export"));
     module.addIncludePath(jdk.path(b, jdk_os).path(b, "javavm/export"));
-
-    _ = b.addExecutable(.{
-        .name = "codegen",
-        .root_source_file = b.path("src/codegen/main.zig"),
-        .target = target,
-        .optimize = b.standardOptimizeOption(.{}),
-    });
 }
 
 pub fn create_module(
@@ -32,35 +24,66 @@ pub fn create_module(
 ) *std.Build.Module {
     const self = b.dependencyFromBuildZig(@This(), .{});
 
-    const module = b.createModule(.{ .root_source_file = path });
-    module.addImport("jni", self.module("jni"));
-
-    return module;
+    return b.createModule(.{
+        .root_source_file = path,
+        .imports = &.{
+            .{
+                .name = "jni",
+                .module = self.module("jni"),
+            },
+        },
+    });
 }
 
 pub fn link_wrapper(b: *std.Build, options: LinkWrapperOptions) void {
     const self = b.dependencyFromBuildZig(@This(), .{});
 
     for (options.exports) |item| {
-        const write = b.addWriteFiles();
         const config = b.addOptions();
         config.addOption([]const u8, "class_name", item.class);
 
-        const root = write.addCopyFile(
-            self.path("src/build/root.zig"),
-            "root.zig",
-        );
-        _ = write.add("codegen.zig", "");
+        const run = b.addRunArtifact(b.addExecutable(.{
+            .name = "codegen",
+            .root_module = b.createModule(.{
+                .target = b.graph.host,
+                .root_source_file = self.path("src/codegen/main.zig"),
+                .imports = &.{
+                    .{
+                        .name = "jni",
+                        .module = self.module("jni"),
+                    },
+                    .{
+                        .name = "config",
+                        .module = config.createModule(),
+                    },
+                    .{
+                        .name = "source",
+                        .module = item.module,
+                    },
+                },
+            }),
+        }));
+        const cg_path = run.addOutputFileArg("codegen.zig");
 
-        const obj = b.addObject(.{
+        options.link_to.addObject(b.addObject(.{
             .name = "wrapper",
-            .root_source_file = root,
-        });
-        obj.root_module.addImport("jni", self.module("jni"));
-        obj.root_module.addImport("config", config.createModule());
-        obj.root_module.addImport("source", item.module);
-
-        options.link_to.addObject(obj);
+            .pic = true,
+            .root_module = b.createModule(.{
+                .target = options.target,
+                .optimize = options.optimize,
+                .root_source_file = cg_path,
+                .imports = &.{
+                    .{
+                        .name = "jni",
+                        .module = self.module("jni"),
+                    },
+                    .{
+                        .name = "source",
+                        .module = item.module,
+                    },
+                },
+            }),
+        }));
     }
 }
 
