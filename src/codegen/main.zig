@@ -62,7 +62,7 @@ pub fn main() !void {
                 .instance => "jni.c.jobject",
             },
         }));
-        try write_params(alloc, out.writer(), i, params, has_ctx);
+        try write_params(out.writer(), i, params, has_ctx);
         try out.writeAll(std.fmt.comptimePrint(
             \\) {s}.return_type.? {{
             \\
@@ -83,7 +83,7 @@ pub fn main() !void {
             \\(
             \\
         );
-        try write_fn_params(alloc, out.writer(), params, has_ctx);
+        try write_fn_params(out.writer(), params, has_ctx);
         try out.writeAll(
             \\    );
             \\}
@@ -93,7 +93,6 @@ pub fn main() !void {
 }
 
 fn write_params(
-    alloc: std.mem.Allocator,
     writer: anytype,
     comptime decl_i: []const u8,
     params: []const std.builtin.Type.Fn.Param,
@@ -103,21 +102,17 @@ fn write_params(
         return;
 
     const start: usize = if (has_ctx) 1 else 0;
-    for (start.., params[start..]) |i, _| {
-        const str = try std.fmt.allocPrint(alloc,
+    for (start.., params[start..]) |i, _|
+        try std.fmt.format(writer,
             \\    @"{[index]d}": {[info]s}.params[{[index]d}].type.?,
             \\
         , .{
             .index = i,
             .info = info(decl_i),
         });
-        defer alloc.free(str);
-        try writer.writeAll(str);
-    }
 }
 
 fn write_fn_params(
-    alloc: std.mem.Allocator,
     writer: anytype,
     params: []const std.builtin.Type.Fn.Param,
     has_ctx: bool,
@@ -127,14 +122,11 @@ fn write_fn_params(
         \\
     );
     const start: usize = if (has_ctx) 1 else 0;
-    for (start.., params[start..]) |i, _| {
-        const str = try std.fmt.allocPrint(alloc,
+    for (start.., params[start..]) |i, _|
+        try std.fmt.format(writer,
             \\        @"{d}",
             \\
         , .{i});
-        defer alloc.free(str);
-        try writer.writeAll(str);
-    }
 }
 
 fn info(comptime i: []const u8) []const u8 {
