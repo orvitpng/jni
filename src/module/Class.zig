@@ -1,11 +1,19 @@
 const Self = @This();
-const root = @import("mod.zig");
+const c = @import("c");
+const jni = @import("mod.zig");
 
-owner: ?*root.c.JNIEnv = null,
-c: root.c.jclass,
+_c: c.jclass,
+_owner: ?jni.Environment = null,
 
-pub fn deinit(self: Self) void {
-    if (self.owner == null)
-        @panic("destroying class without attached owner");
-    self.owner.?.*.*.DeleteLocalRef.?(self.owner, self.c);
+/// Deletes the local reference to the class. This is necessary to prevent
+/// leaks in JNI.
+pub fn delete_local_ref(self: Self) void {
+    const env = self.check_owner();
+    env._delete_local_ref(self._c);
+}
+
+fn check_owner(self: Self) jni.Environment {
+    if (self._owner == null)
+        @compileError("no attached owner");
+    return self._owner.?;
 }

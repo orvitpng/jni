@@ -1,5 +1,4 @@
 const config = @import("config");
-const jni = @import("jni");
 const source = @import("source");
 const std = @import("std");
 
@@ -37,16 +36,32 @@ pub fn main() !void {
         const params = fn_info.params;
 
         comptime var _ctx_type: ?ContextType = null;
-        if (params.len > 0) {
-            if (params[0].type.? == jni.StaticContext)
-                _ctx_type = .static
-            else if (params[0].type.? == jni.InstanceContext)
-                _ctx_type = .instance;
+        if (params.len > 0 and params[0].type != null) {
+            const ctx_info = @typeInfo(params[0].type.?);
+            if (ctx_info == .@"struct") {
+                if (ctx_info.@"struct".fields.len == 2) {
+                    // there's probably a better way to do this that works on
+                    // all types, but i frankly couldn't be fucked to make this
+                    // codegen actually decent.
+                    if (comptime std.mem.eql(
+                        u8,
+                        ctx_info.@"struct".fields[1].name,
+                        "class",
+                    )) _ctx_type = .static else if (comptime std.mem.eql(
+                        u8,
+                        ctx_info.@"struct".fields[1].name,
+                        "object",
+                    )) _ctx_type = .instance;
+                }
+            }
         }
 
         const i = std.fmt.comptimePrint("{d}", .{_i});
         const ctx_type = _ctx_type orelse .static;
         const has_ctx = _ctx_type != null;
+
+        const ret_info = @typeInfo(fn_info.return_type.?);
+        const err = ret_info == .error_union;
 
         try out.writeAll(comptime std.fmt.comptimePrint(
             \\export fn {s}(
@@ -54,7 +69,7 @@ pub fn main() !void {
             \\    {s}: {s},
             \\
         , .{
-            jni.escape("Java." ++ config.class_name ++ "." ++ decl.name),
+            escape("Java." ++ config.class_name ++ "." ++ decl.name),
             if (has_ctx) "env" else "_",
             if (has_ctx) "obj" else "_",
             switch (ctx_type) {
@@ -63,28 +78,36 @@ pub fn main() !void {
             },
         }));
         try write_params(out.writer(), i, params, has_ctx);
-        try out.writeAll(std.fmt.comptimePrint(
+        try out.writeAll(std.fmt.comptimePrint(if (err)
+            \\) @typeInfo({s}.return_type.?).error_union.payload {{
+            \\
+        else
             \\) {s}.return_type.? {{
             \\
         , .{comptime info(i)}));
-        if (has_ctx) try out.writeAll(std.fmt.comptimePrint(
-            \\    const ctx = jni.{s}{{
-            \\        .env = .{{ .c = env }},
-            \\        .{s} = .{{ .c = obj }},
-            \\    }};
-            \\
-        , .{
-            if (ctx_type == .static) "StaticContext" else "InstanceContext",
-            if (ctx_type == .static) "class" else "object",
-        }));
         try out.writeAll(
             \\    return source.
         ++ decl.name ++
             \\(
             \\
         );
+        if (has_ctx) try out.writeAll(
+            \\        .{
+            \\            .env = .{ ._c = env },
+            \\            .
+        ++ (if (ctx_type == .static) "class" else "object") ++
+            \\ = .{ ._c = obj },
+            \\        },
+            \\
+        );
         try write_fn_params(out.writer(), params, has_ctx);
-        try out.writeAll(
+        try out.writeAll(if (err)
+            \\    ) catch @panic("
+        ++ decl.name ++
+            \\ returned an error union");
+            \\}
+            \\
+        else
             \\    );
             \\}
             \\
@@ -117,10 +140,6 @@ fn write_fn_params(
     params: []const std.builtin.Type.Fn.Param,
     has_ctx: bool,
 ) !void {
-    if (has_ctx) try writer.writeAll(
-        \\        ctx,
-        \\
-    );
     const start: usize = if (has_ctx) 1 else 0;
     for (start.., params[start..]) |i, _|
         try std.fmt.format(writer,
@@ -139,3 +158,43 @@ const ContextType = enum {
     static,
     instance,
 };
+
+pub fn escape(comptime str: []const u8) []const u8 {
+    comptime var size = 0;
+    inline for (str) |ch|
+        size += switch (ch) {
+            '_', ';', '[' => 2,
+            else => 1,
+        };
+
+    var buf: [size]u8 = undefined;
+    comptime var i = 0;
+    inline for (str) |ch|
+        switch (ch) {
+            '_' => {
+                buf[i] = '_';
+                buf[i + 1] = '1';
+                i += 2;
+            },
+            ';' => {
+                buf[i] = '_';
+                buf[i + 1] = '2';
+                i += 2;
+            },
+            '[' => {
+                buf[i] = '_';
+                buf[i + 1] = '3';
+                i += 2;
+            },
+            '.' => {
+                buf[i] = '_';
+                i += 1;
+            },
+            else => {
+                buf[i] = ch;
+                i += 1;
+            },
+        };
+
+    return &buf;
+}

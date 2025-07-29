@@ -1,81 +1,94 @@
+const Self = @This();
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
-    const jdk = b.dependency("openjdk8", .{}).path("jdk/src");
+    const jdk = b.dependency("openjdk", .{}).path("src/java.base");
     const jdk_os = switch (target.result.os.tag) {
-        .windows => "windows",
         .macos => "macosx",
-        else => "solaris", // Unix-like fallback
+        .windows => "windows",
+        else => "unix", // not guranateed, but safe fallback
     };
 
-    const module = b.addModule(
-        "jni",
-        .{ .root_source_file = b.path("src/module/mod.zig") },
-    );
-    module.addIncludePath(jdk.path(b, "share/javavm/export"));
-    module.addIncludePath(jdk.path(b, jdk_os).path(b, "javavm/export"));
-}
+    const c = b.addTranslateC(.{
+        .target = target,
+        .optimize = b.standardOptimizeOption(.{}),
+        .root_source_file = jdk.path(b, "share/native/include/jni.h"),
+        .link_libc = true,
+    });
+    c.addIncludePath(jdk.path(b, "share/native/include"));
+    c.addIncludePath(jdk.path(b, jdk_os).path(b, "native/include"));
 
-pub fn create_module(
-    b: *std.Build,
-    path: std.Build.LazyPath,
-) *std.Build.Module {
-    const self = b.dependencyFromBuildZig(@This(), .{});
-
-    return b.createModule(.{
-        .root_source_file = path,
+    _ = b.addModule("jni", .{
+        .root_source_file = b.path("src/module/mod.zig"),
         .imports = &.{
             .{
-                .name = "jni",
-                .module = self.module("jni"),
+                .name = "c",
+                .module = c.createModule(),
             },
         },
     });
 }
 
-pub fn link_wrapper(b: *std.Build, options: LinkWrapperOptions) void {
-    const self = b.dependencyFromBuildZig(@This(), .{});
+pub fn create_module(
+    b: *std.Build,
+    options: CreateModuleOptions,
+) *std.Build.Module {
+    const self = b.dependencyFromBuildZig(Self, .{ .target = options.target });
 
-    for (options.exports) |item| {
-        const config = b.addOptions();
-        config.addOption([]const u8, "class_name", item.class);
+    const module = b.createModule(.{
+        .imports = options.imports,
+        .root_source_file = options.root_source_file,
+    });
+    module.addImport("jni", self.module("jni"));
 
-        const run = b.addRunArtifact(b.addExecutable(.{
-            .name = "codegen",
-            .root_module = b.createModule(.{
-                .target = b.graph.host,
-                .root_source_file = self.path("src/codegen/main.zig"),
-                .imports = &.{
-                    .{
-                        .name = "jni",
-                        .module = self.module("jni"),
-                    },
-                    .{
-                        .name = "config",
-                        .module = config.createModule(),
-                    },
-                    .{
-                        .name = "source",
-                        .module = item.module,
-                    },
+    return module;
+}
+
+pub fn codegen(b: *std.Build, item: Export) std.Build.LazyPath {
+    const self = b.dependencyFromBuildZig(Self, .{});
+
+    const config = b.addOptions();
+    config.addOption([]const u8, "class_name", item.class);
+
+    const exe = b.addExecutable(.{
+        .name = "codegen",
+        .root_module = b.createModule(.{
+            .target = b.graph.host,
+            .root_source_file = self.path("src/codegen/main.zig"),
+            .imports = &.{
+                .{
+                    .name = "config",
+                    .module = config.createModule(),
                 },
-            }),
-        }));
-        const cg_path = run.addOutputFileArg("codegen.zig");
+                .{
+                    .name = "source",
+                    .module = item.module,
+                },
+            },
+        }),
+    });
+    const run = b.addRunArtifact(exe);
 
-        options.link_to.addObject(b.addObject(.{
+    return run.addOutputFileArg("codegen.zig");
+}
+
+pub fn link_wrapper(b: *std.Build, options: LinkWrapperOptions) void {
+    for (options.exports) |item| {
+        const obj = b.addObject(.{
             .name = "wrapper",
-            .pic = true,
             .root_module = b.createModule(.{
                 .target = options.target,
                 .optimize = options.optimize,
-                .root_source_file = cg_path,
+                .pic = true,
+                .root_source_file = codegen(b, item),
                 .imports = &.{
                     .{
                         .name = "jni",
-                        .module = self.module("jni"),
+                        .module = item.module.import_table.get("jni") orelse
+                            @panic("jni module not generated with " ++
+                                "create_module"),
                     },
                     .{
                         .name = "source",
@@ -83,9 +96,16 @@ pub fn link_wrapper(b: *std.Build, options: LinkWrapperOptions) void {
                     },
                 },
             }),
-        }));
+        });
+        options.link_to.addObject(obj);
     }
 }
+
+pub const CreateModuleOptions = struct {
+    target: std.Build.ResolvedTarget,
+    root_source_file: std.Build.LazyPath,
+    imports: []const std.Build.Module.Import = &.{},
+};
 
 pub const LinkWrapperOptions = struct {
     target: std.Build.ResolvedTarget,

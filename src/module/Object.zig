@@ -1,5 +1,5 @@
-const root = @import("mod.zig");
+const c = @import("c");
+const jni = @import("mod.zig");
 
-pub const Object = struct {
-    c: root.c.jobject,
-};
+_c: c.jobject,
+_owner: ?jni.Environment = null,

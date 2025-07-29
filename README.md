@@ -1,14 +1,7 @@
 # jni
 
-This is built using Zig 0.14.1.
+A zero-cost Zig library that makes working with the Java Native Interface feel
+magical.
 
-A library that makes JNI integration with Zig simple and straightforward. This
-library is designed for Java 8 compatibility and provides a clean interface for
-creating native methods.
-
-Documentation is planned to be written some time in the future. For now, view
-`build.zig` to see the functions used to allow for zero-cost abstraction from
-the C JNI interface.
-
-Based on and with great inspiration from:
-[SuperIceCN/zig-jni](https://github.com/SuperIceCN/zig-jni)
+This is built using Zig 0.14.1 and OpenJDK 21 (however *most* operations
+should be backwards compatible at least as far as Java 1.8).
