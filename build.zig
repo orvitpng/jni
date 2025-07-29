@@ -6,7 +6,6 @@ pub fn build(b: *std.Build) void {
 
     const jdk = b.dependency("openjdk", .{}).path("src/java.base");
     const jdk_os = switch (target.result.os.tag) {
-        .macos => "macosx",
         .windows => "windows",
         else => "unix", // not guranateed, but safe fallback
     };
