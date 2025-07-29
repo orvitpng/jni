@@ -48,7 +48,7 @@ pub fn Handle(comptime T: type) type {
         }
 
         pub fn to_ptr(handle: long) ?*T {
-            if (handle == 0) return 0;
+            if (handle == 0) return null;
             return @ptrFromInt(@as(usize, @bitCast(handle)));
         }
 
@@ -108,13 +108,14 @@ pub const Result = enum(c_int) {
 
     pub fn check(self: Result) Error!void {
         if (self.is_ok()) return;
-        switch (@intFromEnum(self)) {
+        switch (self) {
             .unknown => return error.unknown,
             .detached => return error.detached,
             .version => return error.version,
             .nomem => return error.out_of_memory,
             .exist => return error.already_exists,
             .invalid => return error.invalid_argument,
+            else => unreachable,
         }
     }
 };

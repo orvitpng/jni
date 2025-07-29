@@ -28,10 +28,10 @@ pub fn find_class(self: Self, name: [*:0]const u8) ?jni.Class {
 /// Throws a new exception of the given class with the provided message.
 pub fn throw_new(
     self: Self,
-    class: jni.class,
+    class: jni.Class,
     message: [*:0]const u8,
 ) jni.Error!void {
-    const result = self._c.*.*.ThrowNew.?(self._c, class, message);
+    const result = self._c.*.*.ThrowNew.?(self._c, class._c, message);
     return jni.Result.check(@enumFromInt(result));
 }
 

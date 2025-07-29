@@ -13,7 +13,6 @@ pub fn delete_local_ref(self: Self) void {
 }
 
 fn check_owner(self: Self) jni.Environment {
-    if (self._owner == null)
-        @compileError("no attached owner");
+    if (self._owner == null) @panic("no attached owner");
     return self._owner.?;
 }
