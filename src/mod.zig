@@ -41,19 +41,62 @@ pub const InstanceContext = struct {
     object: Object,
 };
 
-pub fn Handle(comptime T: type) type {
+pub inline fn escape(comptime str: []const u8) []const u8 {
+    comptime {
+        var len = 0;
+        for (str) |ch|
+            switch (ch) {
+                '_', ';', '[' => len += 2,
+                else => len += 1,
+            };
+
+        var buf: [len]u8 = undefined;
+        var i = 0;
+        for (str) |ch|
+            switch (ch) {
+                '_' => {
+                    buf[i] = '_';
+                    buf[i + 1] = '1';
+                    i += 2;
+                },
+                ';' => {
+                    buf[i] = '_';
+                    buf[i + 1] = '2';
+                    i += 2;
+                },
+                '[' => {
+                    buf[i] = '_';
+                    buf[i + 1] = '3';
+                    i += 2;
+                },
+                '.' => {
+                    buf[i] = '_';
+                    i += 1;
+                },
+                else => {
+                    buf[i] = ch;
+                    i += 1;
+                },
+            };
+
+        const copy = buf;
+        return &copy;
+    }
+}
+
+pub fn handle(comptime T: type) type {
     return struct {
         pub fn from_ptr(ptr: *T) long {
             return @bitCast(@intFromPtr(ptr));
         }
 
-        pub fn to_ptr(handle: long) ?*T {
-            if (handle == 0) return null;
-            return @ptrFromInt(@as(usize, @bitCast(handle)));
+        pub fn to_ptr(jptr: long) ?*T {
+            if (jptr == 0) return null;
+            return @ptrFromInt(@as(usize, @bitCast(jptr)));
         }
 
-        pub fn to_ptr_throw(env: Environment, handle: long) Error!?*T {
-            const ptr = to_ptr(handle);
+        pub fn to_ptr_throw(env: Environment, jptr: long) Error!?*T {
+            const ptr = to_ptr(jptr);
             if (ptr != null) return ptr;
 
             const cls =

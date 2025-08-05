@@ -3,6 +3,7 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
     const jdk = b.dependency("openjdk", .{}).path("src/java.base");
     const jdk_os = switch (target.result.os.tag) {
@@ -12,7 +13,7 @@ pub fn build(b: *std.Build) void {
 
     const c = b.addTranslateC(.{
         .target = target,
-        .optimize = b.standardOptimizeOption(.{}),
+        .optimize = optimize,
         .root_source_file = jdk.path(b, "share/native/include/jni.h"),
         .link_libc = true,
     });
@@ -20,100 +21,82 @@ pub fn build(b: *std.Build) void {
     c.addIncludePath(jdk.path(b, jdk_os).path(b, "native/include"));
 
     _ = b.addModule("jni", .{
-        .root_source_file = b.path("src/module/mod.zig"),
+        .root_source_file = b.path("src/mod.zig"),
         .imports = &.{
-            .{
-                .name = "c",
-                .module = c.createModule(),
-            },
+            .{ .name = "c", .module = c.createModule() },
         },
     });
 }
 
-pub fn create_module(
-    b: *std.Build,
-    options: CreateModuleOptions,
-) *std.Build.Module {
-    const self = b.dependencyFromBuildZig(Self, .{ .target = options.target });
-
-    const module = b.createModule(.{
-        .imports = options.imports,
-        .root_source_file = options.root_source_file,
-    });
-    module.addImport("jni", self.module("jni"));
-
-    return module;
-}
-
-pub fn codegen(b: *std.Build, item: Export) std.Build.LazyPath {
-    const self = b.dependencyFromBuildZig(Self, .{});
-
-    const config = b.addOptions();
-    config.addOption([]const u8, "class_name", item.class);
-
-    const exe = b.addExecutable(.{
-        .name = "codegen",
-        .root_module = b.createModule(.{
-            .target = b.graph.host,
-            .root_source_file = self.path("src/codegen/main.zig"),
-            .imports = &.{
-                .{
-                    .name = "config",
-                    .module = config.createModule(),
-                },
-                .{
-                    .name = "source",
-                    .module = item.module,
-                },
-            },
-        }),
-    });
-    const run = b.addRunArtifact(exe);
-
-    return run.addOutputFileArg("codegen.zig");
-}
-
-pub fn link_wrapper(b: *std.Build, options: LinkWrapperOptions) void {
+pub fn link(b: *std.Build, options: CreateObjectOptions) void {
     for (options.exports) |item| {
         const obj = b.addObject(.{
             .name = "wrapper",
-            .root_module = b.createModule(.{
-                .target = options.target,
-                .optimize = options.optimize,
-                .pic = true,
-                .root_source_file = codegen(b, item),
-                .imports = &.{
-                    .{
-                        .name = "jni",
-                        .module = item.module.import_table.get("jni") orelse
-                            @panic("jni module not generated with " ++
-                                "create_module"),
-                    },
-                    .{
-                        .name = "source",
-                        .module = item.module,
-                    },
-                },
-            }),
+            .root_module = codegen(
+                b,
+                options.target,
+                options.optimize,
+                item.class,
+                item.module,
+            ),
         });
         options.link_to.addObject(obj);
     }
 }
 
-pub const CreateModuleOptions = struct {
+fn codegen(
+    b: *std.Build,
     target: std.Build.ResolvedTarget,
-    root_source_file: std.Build.LazyPath,
-    imports: []const std.Build.Module.Import = &.{},
-};
+    optimize: std.builtin.OptimizeMode,
+    class: []const u8,
+    module: *std.Build.Module,
+) *std.Build.Module {
+    const self = b.dependencyFromBuildZig(Self, .{});
 
-pub const LinkWrapperOptions = struct {
+    const config = b.addOptions();
+    config.addOption([]const u8, "class", class);
+
+    const exe = b.addExecutable(.{
+        .name = "codegen",
+        .root_module = b.createModule(.{
+            .target = b.graph.host,
+            .root_source_file = self.path("build/codegen.zig"),
+            .imports = &.{
+                // currently, this causes issues with mod.zig being included
+                // multiple times, so we must do this hack which won't work all
+                // the time unfortunately
+                // .{ .name = "jni", .module = self.module("jni") },
+                .{ .name = "jni", .module = module.import_table.get("jni").? },
+                .{ .name = "config", .module = config.createModule() },
+                .{ .name = "source", .module = module },
+            },
+        }),
+    });
+    const run = b.addRunArtifact(exe);
+
+    const stdout = run.captureStdOut();
+    run.captured_stdout.?.basename = "stdout.zig";
+
+    return b.createModule(.{
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = stdout,
+        .imports = &.{
+            // .{ .name = "jni", .module = self.module("jni") },
+            .{ .name = "jni", .module = module.import_table.get("jni").? },
+            .{ .name = "wrapped", .module = module },
+        },
+    });
+}
+
+const CreateObjectOptions = struct {
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     link_to: *std.Build.Module,
     exports: []const Export,
 };
 
-pub const Export = struct {
+const Export = struct {
     class: []const u8,
     module: *std.Build.Module,
 };
