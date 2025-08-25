@@ -1,4 +1,4 @@
-# jni (master)
+# jni (0.15)
 
 A zero-cost Zig library that makes working with the Java Native Interface feel
 magical.

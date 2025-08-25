@@ -80,6 +80,7 @@ fn codegen(
     return b.createModule(.{
         .target = target,
         .optimize = optimize,
+        .pic = true,
         .root_source_file = stdout,
         .imports = &.{
             // .{ .name = "jni", .module = self.module("jni") },
